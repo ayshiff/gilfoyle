@@ -2,10 +2,12 @@ package gcs
 
 import (
 	"context"
-	"github.com/dreamvo/gilfoyle/storage"
+	"fmt"
 	"io"
 	"mime"
 	"path/filepath"
+
+	"github.com/dreamvo/gilfoyle/storage"
 
 	gstorage "cloud.google.com/go/storage"
 	"google.golang.org/api/option"
@@ -61,10 +63,13 @@ func (g *Storage) Stat(ctx context.Context, path string) (*storage.Stat, error) 
 
 // Open opens path for reading.
 func (g *Storage) Open(ctx context.Context, path string) (io.ReadCloser, error) {
+	fmt.Printf("here2")
 	r, err := g.bucket.Object(path).NewReader(ctx)
-	if err == gstorage.ErrObjectNotExist {
-		return nil, storage.ErrNotExist
+	fmt.Printf("here3")
+	if err != nil {
+		return nil, err
 	}
+	defer r.Close()
 	return r, err
 }
 

@@ -3,25 +3,31 @@ package s3_test
 import (
 	"bytes"
 	"context"
+	"io/ioutil"
+	"os"
+	"testing"
+	"time"
+
 	"github.com/dreamvo/gilfoyle"
 	"github.com/dreamvo/gilfoyle/config"
 	"github.com/dreamvo/gilfoyle/storage"
-	"github.com/google/uuid"
 	assertTest "github.com/stretchr/testify/assert"
-	"io/ioutil"
-	"testing"
-	"time"
 )
 
 func TestS3(t *testing.T) {
 	assert := assertTest.New(t)
+	port := os.Getenv("FAKE_S3_SERVER_PORT")
+
+	if port == "" {
+		port = "7000"
+	}
 
 	gilfoyle.Config.Storage.S3 = config.S3Config{
-		Hostname:        "play.min.io",
-		AccessKeyID:     "Q3AM3UQ867SPQQA43P2F",
-		SecretAccessKey: "zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG",
-		Bucket:          uuid.New().String(),
-		EnableSSL:       true,
+		Hostname:        "127.0.0.1:" + port,
+		AccessKeyID:     "access_key",
+		SecretAccessKey: "secret_key",
+		Bucket:          "gilfoyle-aws-bucket",
+		EnableSSL:       false,
 	}
 
 	t.Run("should return error file does not exist", func(t *testing.T) {
@@ -97,5 +103,15 @@ func TestS3(t *testing.T) {
 		b, err := ioutil.ReadAll(f)
 		assert.NoError(err)
 		assert.Equal("hello", string(b))
+	})
+
+	t.Run("should delete the file", func(t *testing.T) {
+		s, err := gilfoyle.NewStorage(storage.AmazonS3)
+		assert.NoError(err)
+
+		ctx := context.Background()
+
+		err = s.Delete(ctx, "world")
+		assert.NoError(err)
 	})
 }
