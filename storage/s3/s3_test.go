@@ -3,27 +3,69 @@ package s3_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io/ioutil"
-	"os"
+	"log"
+	"net/http"
 	"testing"
 	"time"
 
 	"github.com/dreamvo/gilfoyle"
 	"github.com/dreamvo/gilfoyle/config"
 	"github.com/dreamvo/gilfoyle/storage"
+	"github.com/ory/dockertest"
+	"github.com/ory/dockertest/docker"
 	assertTest "github.com/stretchr/testify/assert"
 )
 
 func TestS3(t *testing.T) {
 	assert := assertTest.New(t)
-	port := os.Getenv("FAKE_S3_SERVER_PORT")
+	var err error
 
-	if port == "" {
-		port = "7000"
+	pool, err := dockertest.NewPool("")
+	if err != nil {
+		log.Fatalf("Could not connect to docker: %s", err)
+	}
+
+	options := &dockertest.RunOptions{
+		Repository: "minio/minio",
+		Tag:        "latest",
+		Cmd:        []string{"server", "/data"},
+		PortBindings: map[docker.Port][]docker.PortBinding{
+			"9000/tcp": []docker.PortBinding{{HostPort: "9000"}},
+		},
+		Env: []string{"MINIO_ACCESS_KEY=access_key", "MINIO_SECRET_KEY=secret_key"},
+	}
+
+	resource, err := pool.RunWithOptions(options, func(config *docker.HostConfig) {
+		// set AutoRemove to true so that stopped container goes away by itself
+		config.AutoRemove = true
+		config.RestartPolicy = docker.RestartPolicy{
+			Name: "no",
+		}
+	})
+	if err != nil {
+		log.Fatalf("Could not start resource: %s", err)
+	}
+
+	endpoint := fmt.Sprintf("localhost:%s", resource.GetPort("9000/tcp"))
+
+	if err := pool.Retry(func() error {
+		url := fmt.Sprintf("http://%s/minio/health/live", endpoint)
+		resp, err := http.Get(url)
+		if err != nil {
+			return err
+		}
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("status code not OK")
+		}
+		return nil
+	}); err != nil {
+		log.Fatalf("Could not connect to docker: %s", err)
 	}
 
 	gilfoyle.Config.Storage.S3 = config.S3Config{
-		Hostname:        "127.0.0.1:" + port,
+		Hostname:        endpoint,
 		AccessKeyID:     "access_key",
 		SecretAccessKey: "secret_key",
 		Bucket:          "gilfoyle-aws-bucket",
@@ -114,4 +156,7 @@ func TestS3(t *testing.T) {
 		err = s.Delete(ctx, "world")
 		assert.NoError(err)
 	})
+	if err = pool.Purge(resource); err != nil {
+		log.Fatalf("Could not purge resource: %s", err)
+	}
 }
