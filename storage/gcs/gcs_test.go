@@ -21,7 +21,7 @@ import (
 
 // NewMockedStorage returns a new mocked Storage.
 func NewMockedStorage(ctx context.Context, bucket string, port string) (*Storage, error) {
-	client, err := gstorage.NewClient(ctx, option.WithoutAuthentication(), option.WithEndpoint("https://www.googleapis.com/storage/v1/"))
+	client, err := gstorage.NewClient(ctx, option.WithoutAuthentication(), option.WithEndpoint("https://0.0.0.0:4443/storage/v1/b"))
 	if err != nil {
 		return nil, err
 	}
@@ -43,9 +43,12 @@ func Test(t *testing.T) {
 
 	options := &dockertest.RunOptions{
 		Repository: "fsouza/fake-gcs-server",
+		Tag:        "latest",
 		PortBindings: map[docker.Port][]docker.PortBinding{
 			"4443/tcp": {{HostPort: "4443"}},
 		},
+		ExposedPorts: []string{"4443/tcp"},
+		Privileged:   true,
 	}
 
 	// Build and run the given Dockerfile
@@ -59,10 +62,6 @@ func Test(t *testing.T) {
 	if err != nil {
 		log.Fatalf("Could not start resource: %s", err)
 	}
-
-	endpoint := fmt.Sprintf("localhost:%s", resource.GetPort("4443/tcp"))
-
-	fmt.Printf(endpoint)
 
 	if err = pool.Retry(func() error {
 		http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
@@ -78,7 +77,7 @@ func Test(t *testing.T) {
 		log.Fatalf("Could not connect to docker: %s", err)
 	}
 	ctx := context.Background()
-	s, err := NewStorage(ctx, bucket, port)
+	s, err := NewMockedStorage(ctx, bucket, port)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +87,7 @@ func Test(t *testing.T) {
 		ctx := context.Background()
 
 		_, err = s.Stat(ctx, "doesnotexist")
-		assert.EqualError(err, "The specified key does not exist.")
+		assert.EqualError(err, "file does not exist")
 	})
 
 	t.Run("should create file", func(t *testing.T) {
